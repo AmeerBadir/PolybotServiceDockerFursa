@@ -3,6 +3,10 @@ from loguru import logger
 import os
 import time
 from telebot.types import InputFile
+import requests
+import boto3
+import json
+from collections import Counter
 
 
 class Bot:
@@ -17,7 +21,7 @@ class Bot:
         time.sleep(0.5)
 
         # set the webhook URL
-        self.telegram_bot_client.set_webhook(url=f'{telegram_chat_url}/{token}/', timeout=60)
+        self.telegram_bot_client.set_webhook(url=f'{telegram_chat_url}/{token}/', timeout=60, certificate=open("cert.pem", "r"))
 
         logger.info(f'Telegram Bot information\n\n{self.telegram_bot_client.get_me()}')
 
@@ -65,13 +69,74 @@ class Bot:
         self.send_text(msg['chat']['id'], f'Your original message: {msg["text"]}')
 
 
+def get_result(respond):
+    if "labels" in respond:
+        try:
+            dict_objects = dict()
+            total_count = 0
+            for lab in respond['labels']:
+                item_class = lab['class']
+                if item_class in dict_objects:
+                    dict_objects[item_class] += 1
+                else:
+                    dict_objects[item_class] = 1
+                total_count += 1
+            return total_count, dict_objects
+        except Exception as e:
+            logger.error(f"Error in get_result function: {e}")
+            return None, {}
+
+
+def summary_msg(total_object_number, object_dictionary):
+    msg = f'We detect {total_object_number} objects.\n'
+    for key, val in object_dictionary.items:
+        object_count = f'object {key} found {val} times.\n'
+        msg += object_count
+    return msg
+
+
 class ObjectDetectionBot(Bot):
     def handle_message(self, msg):
         logger.info(f'Incoming message: {msg}')
-
+        if "text" in msg:
+            if msg["text"] == '/start':
+                self.send_text(msg['chat']['id'], 'Hi!, give a photo to start object detection')
         if self.is_current_msg_photo(msg):
-            photo_path = self.download_user_photo(msg)
-
             # TODO upload the photo to S3
+
+            photo_path = self.download_user_photo(msg)
+            img_name = os.path.basename(photo_path)
+            s3 = boto3.client('s3')
+            images_bucket = os.environ['BUCKET_NAME']
+            try:
+                s3.upload_file(photo_path, images_bucket, img_name)
+            except Exception as e:
+                self.send_text(msg['chat']['id'], "failed to upload image")
+
+                logger.error(f"Upload image to s3 failed: {e}")
+
             # TODO send an HTTP request to the `yolo5` service for prediction
+
+            try:
+                yolo_url = f"http://yolo5-container:8081/predict?imgName={img_name}"
+                response = requests.post(yolo_url)
+                if response.status_code == 200:
+                    prediction_result = response.json()
+                    logger.info(f'YOLO prediction result: {prediction_result}')
+                else:
+                    return
+            except Exception as e:
+                self.send_text(msg['chat']['id'], "failed to connect to yolo service")
+                logger.error(f'Error communicating with YOLO service: {str(e)}')
+                return
+
             # TODO send the returned results to the Telegram end-user
+            total_object_number, object_dictionary = get_result(response.json())
+            if total_object_number is None and object_dictionary == {}:
+                self.send_text(msg['chat']['id'], "failed to upload image")
+            else:
+                response_msg = summary_msg(total_object_number,object_dictionary)
+                self.send_text(msg['chat']['id'], response_msg)
+
+        else:
+            self.send_text(msg['chat']['id'], 'Please send a photo for object detection.')
