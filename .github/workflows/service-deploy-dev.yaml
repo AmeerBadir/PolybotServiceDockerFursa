@@ -6,7 +6,7 @@ on:
       - dev
 
 env:
-  BOT_INSTANCE_DOMAIN: dev-bot.mohammadgh.click
+  BOT_INSTANCE_DOMAIN: dev-tel.ameer-domain.click
 
 jobs:
   PolybotBuild:
