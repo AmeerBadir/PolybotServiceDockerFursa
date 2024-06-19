@@ -1,0 +1,69 @@
+services:
+  polybot:
+    image: ${POLYBOT_IMG_NAME}
+    ports:
+      - "8443:8443"
+    environment:
+      - TELEGRAM_TOKEN=${TELEGRAM_TOKEN}
+      - TELEGRAM_APP_URL=${TELEGRAM_APP_URL}
+      - BUCKET_NAME=${BUCKET_NAME}
+    networks:
+      - mongoCluster
+    volumes:
+      - $HOME/.aws/credentials:/root/.aws/credentials
+
+  yolo:
+    image: ${YOLO_IMG_NAME}
+    ports:
+      - "8081:8081"
+    environment:
+      - BUCKET_NAME=${BUCKET_NAME}
+    networks:
+      - mongoCluster
+    volumes:
+      - $HOME/.aws/credentials:/root/.aws/credentials
+
+  mongo1:
+    image: mongo:5
+    command: ["mongod", "--replSet", "myReplicaSet", "--bind_ip", "localhost,mongo1"]
+    container_name: mongo1
+    restart: always
+    ports:
+      - "27017:27017"
+    networks:
+      - mongoCluster
+    volumes:
+      - mongo1-data:/data/db
+
+  mongo2:
+    image: mongo:5
+    command: ["mongod", "--replSet", "myReplicaSet", "--bind_ip", "localhost,mongo2"]
+    container_name: mongo2
+    restart: always
+    ports:
+      - "27018:27017"
+    networks:
+      - mongoCluster
+    volumes:
+      - mongo2-data:/data/db
+
+  mongo3:
+    image: mongo:5
+    command: ["mongod", "--replSet", "myReplicaSet", "--bind_ip", "localhost,mongo3"]
+    container_name: mongo3
+    restart: always
+    ports:
+      - "27019:27017"
+    networks:
+      - mongoCluster
+    volumes:
+      - mongo3-data:/data/db
+
+networks:
+    mongoCluster:
+        driver: bridge
+
+volumes:
+  mongo1-data:
+  mongo2-data:
+  mongo3-data:
